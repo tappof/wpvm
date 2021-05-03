@@ -1,5 +1,5 @@
 # liwogas
-Deploy di una architettura ridondata e scalabile per wordpress.
+Deploy automatico di una architettura ridondata e scalabile per wordpress.
 
 # Architettura
 * La ridondanza e la scalabilità del db (db1..N nello schema) viene garantita tramite cluster galera (builtin nella versione di mariadb installata):
@@ -76,9 +76,9 @@ Deploy di una architettura ridondata e scalabile per wordpress.
 ### Prerequisiti e setup dell'ambiente
 ambiente: debian buster + vagrant con provider libvirt 
 * sudo apt-get install git vagrant sudo qemu libvirt-daemon-system libvirt-clients ebtables dnsmasq-base libxslt-dev libxml2-dev libvirt-dev zlib1g-dev ruby-dev
-* sudo adduser <user> libvirt
-* sudo adduser <user> libvirt-qemu
-* sudo echo "<user> ALL=(ALL) NOPASSWD:ALL" >> /etc/sudoers 
+* sudo adduser *user* libvirt
+* sudo adduser *user* libvirt-qemu
+* sudo echo "*user* ALL=(ALL) NOPASSWD:ALL" >> /etc/sudoers 
 * sudo echo "deb http://ppa.launchpad.net/ansible/ansible/ubuntu trusty main" >> /etc/apt/sources.list
 * sudo apt-key adv --keyserver keyserver.ubuntu.com --recv-keys 93C4A3FD7BB9C367
 * sudo apt-get update
