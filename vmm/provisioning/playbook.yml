@@ -1,0 +1,369 @@
+---
+
+- name: dns names
+  hosts: all
+  become: true
+  vars_files:
+    - vm-config.yml
+  tasks:
+  - name: build /etc/hosts 1
+    lineinfile:
+      path: /etc/hosts
+      regexp: "^.* {{ item.key }}"
+      line: "{{ item.value }} {{ item.key }}"
+      state: present
+    with_items: "{{ dbs_ip | dict2items }}"
+
+  - name: build /etc/hosts 2
+    lineinfile:
+      path: /etc/hosts
+      regexp: "^.* {{ item.key }}"
+      line: "{{ item.value }} {{ item.key }}"
+      state: present
+    with_items: "{{ dbbs_ip | dict2items }}"
+
+  - name: build /etc/hosts 3 
+    lineinfile:
+      path: /etc/hosts
+      regexp: "^.* {{ item.key }}"
+      line: "{{ item.value }} {{ item.key }}"
+      state: present
+    with_items: "{{ wps_ip | dict2items }}"
+
+  - name: build /etc/hosts 4 
+    lineinfile:
+      path: /etc/hosts
+      regexp: "^.* {{ item.key }}"
+      line: "{{ item.value }} {{ item.key }}"
+      state: present
+    with_items: "{{ wpbs_ip | dict2items }}"
+
+  - name: configure static route
+    command: "{{ item }}"
+    with_items:
+      - ip r r 10.0.0.0/8 via "{{ vm_net_gw }}"
+      - ip r r 172.16.0.0/12 via "{{ vm_net_gw }}"
+      - ip r r 192.168.0.0/16 via "{{ vm_net_gw }}"
+
+- name: dbs provisioning 1
+  hosts: dbs
+  become: true
+  tasks:
+  - name: dbs prereqs
+    apt:
+      pkg:
+      - software-properties-common
+      - dirmngr
+
+  - name: add mariadb repo key
+    apt_key:
+      url: https://mariadb.org/mariadb_release_signing_key.asc
+      state: present
+
+  - name: add mariadb repo
+    apt_repository:
+      repo: deb [arch=amd64,arm64,ppc64el] http://ams2.mirrors.digitalocean.com/mariadb/repo/10.5/debian buster main
+      state: present
+      filename: mariadb
+      update_cache: yes
+
+  - name: install mariadb
+    apt:
+      pkg:
+      - mariadb-server=1:10.5.9+maria~buster
+      - galera-4=26.4.7-buster
+      - python-pymysql
+      - rsync
+
+  - name: bind on 0.0.0.0
+    lineinfile:
+      regexp: "^bind-address.*"
+      path: "/etc/mysql/mariadb.conf.d/50-server.cnf"
+      line: "bind-address = 0.0.0.0"
+
+  - name: stop mariadb
+    systemd:
+      state: stopped
+      name: mariadb
+      enabled: yes
+
+  - name: mariadb file limit
+    blockinfile:
+      path: /etc/systemd/system/mariadb.service.d/override.conf
+      create: yes
+      block: |
+        [Service]
+        LimitNOFILE=100000
+        LimitMEMLOCK=100000
+    notify: systemd-daemon-reload
+
+  - name: setup galera config file
+    template:
+      src: etc/mysql/conf.d/galera.cnf  
+      dest: /etc/mysql/conf.d/galera.cnf  
+      backup: no
+      force: yes
+
+  - name: configure vip on db rs and disable arp reply
+    command: "{{ item }}"
+    # eth1 e' hardcoded perche' so che su vagrant l'interfaccia e' sempre quella
+    with_items:
+    - ip a a {{ db_vip }}/32 dev eth1 
+    - arptables -A INPUT -d {{ db_vip }}/32 -j DROP
+    - arptables -A OUTPUT -s {{ db_vip }}/32  -j mangle --mangle-ip-s {{ dbs_ip[ansible_hostname] }}
+
+  handlers:
+  - name: systemd-daemon-reload
+    systemd:
+      daemon_reload: yes
+
+- name: db provisioning 2 
+  hosts: db1
+  become: true
+  vars_files:
+    - vm-config.yml
+  tasks:
+  - name: galera start on bootstrap node 
+    command: galera_new_cluster
+
+  - name: start mariadb
+    systemd:
+      state: started 
+      name: mariadb
+      enabled: yes
+
+  - name: change mariadb admin pwd
+    command: mysql -u root -e 'set password = password("{{ db_root_pwd }}");'
+
+  - name: create wordpress db
+    community.mysql.mysql_query:
+      query:
+      - CREATE DATABASE {{ wpdb_name }} 
+      - GRANT ALL ON {{ wpdb_name }}.* TO '{{ wpdb_user }}'@'%' IDENTIFIED BY '{{ wpdb_pass }}'
+      - FLUSH PRIVILEGES
+      login_user: root
+      login_password: "{{ db_root_pwd }}"
+
+- name: dbs provisioning 3
+  hosts: dbs:!db1
+  become: true
+  tasks:
+  - name: galera start on standard node 
+    systemd:
+      state: started 
+      name: mariadb
+      enabled: yes
+
+- name: configure db balancer
+  hosts: dbbs
+  become: true
+  tasks:
+  - name: install keepalived
+    apt:
+      pkg:
+      - keepalived
+
+  - name: template keepalived dbb config file
+    template:
+      src: etc/keepalived_dbb/keepalived.conf
+      dest: /etc/keepalived/keepalived.conf 
+      backup: no
+      force: yes
+
+  - name: setup dbb master
+    lineinfile:
+      path: /etc/default/keepalived 
+      regexp: "^DAEMON_ARGS=.*"
+      line: "DAEMON_ARGS=\"-i high\""
+      state: present
+    when: ansible_hostname == 'dbb1'
+
+  - name: setup dbb slave 
+    lineinfile:
+      path: /etc/default/keepalived 
+      regexp: "^DAEMON_ARGS=.*"
+      line: "DAEMON_ARGS=\"-i high\""
+      state: present
+    when: ansible_hostname == 'dbb2'
+
+  - name: start dbb keepalived
+    systemd:
+      name: keepalived
+      state: started
+      enabled: yes
+
+  - name: expire quiescent template
+    sysctl:
+      name: "{{ item }}" 
+      value: 1
+      state: present
+      reload: yes
+    with_items:
+      - net.ipv4.ip_forward
+      - net.ipv4.vs.expire_quiescent_template 
+    tags:
+      - sysctl
+
+- name: install glusterfs 
+  hosts: wps 
+  become: true
+  tasks:
+  - name: install glusterfs
+    apt:
+      pkg:
+      - glusterfs-server
+
+  - name: start gluster daemon
+    systemd:
+      state: started
+      enabled: yes
+      name: glusterd
+
+  - name: create gluster bricks dir
+    file:
+      path: /bricks/brick1/wpsharedfs
+      state: directory
+
+- name: setup gluster volume 
+  hosts: wp1 
+  become: true
+  tasks:
+  - name: create gluster volume
+    gluster_volume:
+      state: present
+      name: wpsharedfs
+      replicas: "{{ wp_num }}" 
+      rebalance: no 
+      force: yes
+      bricks: /bricks/brick1/wpsharedfs
+      cluster: "{{ wps_ip | dict2items | json_query('[*].key') | join(',') }}"
+
+- name: wordpress setup
+  hosts: wps
+  vars_files:
+    - vm-config.yml
+  become: true
+  tasks:
+  - name: install wordpress
+    apt:
+      pkg:
+      - wordpress
+
+  - name: vhost config
+    copy:
+      src: etc/apache2/sites-available/wp.conf
+      dest: /etc/apache2/sites-available/wp.conf
+
+  - name: enable vhost
+    command: "{{ item }}"
+    with_items:
+    - a2dissite 000-default
+    - a2ensite wp
+
+  - name: reload apache2
+    systemd:
+      name: apache2
+      state: reloaded
+
+  - name: wordpress db params
+    blockinfile:
+      path: /etc/wordpress/config-default.php
+      create: yes
+      marker: <?php //ANSIBLE MANAGED BLOCK ?>
+      block: |
+        <?php
+        define('DB_NAME', '{{ wpdb_name }}');
+        define('DB_USER', '{{ wpdb_user }}');
+        define('DB_PASSWORD', '{{ wpdb_pass }}');
+        define('DB_HOST', '{{ db_vip }}');
+        define('WP_CONTENT_DIR', '/var/lib/wordpress/wp-content');
+        ?>
+
+  - name: backup wp-content
+    copy:
+      src: /var/lib/wordpress/wp-content/
+      dest: /tmp/wp-content/
+      remote_src: yes
+    when: ansible_hostname == 'wp1'
+
+  - name: mount gluster volume
+    mount:
+      path: /var/lib/wordpress/wp-content
+      src: "{{ ansible_hostname }}:/wpsharedfs" 
+      fstype: glusterfs
+      opts: "defaults,_netdev"
+      state: mounted
+
+  - name: restore wp-content
+    copy:
+      src: /tmp/wp-content/
+      dest: /var/lib/wordpress/wp-content/
+      remote_src: yes
+      owner: www-data
+    when: ansible_hostname == 'wp1'
+
+- name: configure wp balancer
+  hosts: wpbs 
+  become: true
+  tasks:
+  - name: install keepalived on wpb
+    apt:
+      pkg:
+      - keepalived
+
+  - name: template keepalived wpb config file
+    template:
+      src: etc/keepalived_wpb/keepalived.conf
+      dest: /etc/keepalived/keepalived.conf 
+      backup: no
+      force: yes
+
+  - name: setup wpb master
+    lineinfile:
+      path: /etc/default/keepalived 
+      regexp: "^DAEMON_ARGS=.*"
+      line: "DAEMON_ARGS=\"-i high\""
+      state: present
+    when: ansible_hostname == 'wpb1'
+
+  - name: setup wpb slave 
+    lineinfile:
+      path: /etc/default/keepalived 
+      regexp: "^DAEMON_ARGS=.*"
+      line: "DAEMON_ARGS=\"-i high\""
+      state: present
+    when: ansible_hostname == 'wpb2'
+
+  - name: start wpb keepalived
+    systemd:
+      name: keepalived
+      state: started
+      enabled: yes
+
+  - name: expire quiescent template
+    sysctl:
+      name: "{{ item }}" 
+      value: 1
+      state: present
+      reload: yes
+    with_items:
+      - net.ipv4.ip_forward
+      - net.ipv4.vs.expire_quiescent_template 
+    tags:
+      - sysctl
+
+- name: wps disable arp on vip 
+  hosts: wps 
+  vars_files:
+    - vm-config.yml
+  become: true
+  tasks:
+  - name: configure vip on db rs and disable arp reply
+    command: "{{ item }}"
+    # eth1 e' hardcoded perche' so che su vagrant l'interfaccia e' sempre quella
+    with_items:
+    - ip a a {{ wp_vip }}/32 dev eth1 
+    - arptables -A INPUT -d {{ wp_vip }}/32 -j DROP
+    - arptables -A OUTPUT -s {{ wp_vip }}/32  -j mangle --mangle-ip-s {{ wps_ip[ansible_hostname] }}
+
+
