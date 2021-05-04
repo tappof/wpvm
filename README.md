@@ -1,5 +1,5 @@
-# liwogas
-Deploy automatico di una architettura ridondata e scalabile per wordpress.
+# wpvm 
+Deploy automatico di una architettura ridondata e scalabile per wordpress basata su vm.
 
 # Architettura
 * La ridondanza e la scalabilità del db (db1..N nello schema) viene garantita tramite cluster galera (builtin nella versione di mariadb installata):
@@ -7,7 +7,7 @@ Deploy automatico di una architettura ridondata e scalabile per wordpress.
   * multi-master active/active;
   * controllo, esclusione e unione dei nodi/membri automatica;
   * look and feel nativo di MySQL (i client possono contattare uno qualsiasi dei nodi che compongono il cluster senza strati ulteriori);
-  * sono richieste almano 3 istanze per la gestione di quorum e split brain e per la sopravvivenza al fail di 1 nodo;
+  * sono richieste almeno 3 istanze per la gestione di quorum e split brain e per la sopravvivenza al fail di 1 nodo;
 * Il db viene esposto mediante una coppia di bilanciatori active/passive (keepalived/vrrp) chiamati nello schema dbb1/2 e implementati con linux ip virtual server in modalità direct routing:
   * Il bilanciamento viene fatto in kernel space a livello trasporto e sfrutta l'algoritmo wlc (Weighted Least-Connections: nuove connessioni assegnate al server con meno connessioni attive in proporzione al peso assegnatogli);
   * La modalità direct routing è quella più prestante (il vincolo e' che bilanciatori e backend si parlino in L2, il backend viene contattato tramite bilanciatore ma risponde direttamente al chiamante);
