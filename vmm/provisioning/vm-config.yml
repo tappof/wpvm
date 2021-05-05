@@ -3,10 +3,12 @@
 db_num: 3
 # numero di webservice / gluster server (>=3)
 wp_num: 3 
+
 # cpu per vm
 vm_cpu: 1
 # ram per vm
 vm_ram: 512 
+
 # password di root per mariadb
 db_root_pwd: asdlkjasdlkj1
 # nome database wordpress
@@ -15,7 +17,11 @@ wpdb_name: wpdb
 wpdb_user: wpu
 # password utente wpbd_user per db wpdb_name
 wpdb_pass: qwepoiqwepoi1
-# rete su cui risiedono le macchine (vedere sudo virsh net-edit default)
+
+# fqdn per il virtual host wordpress
+wp_fqdn: rockandblog.ga
+
+# rete su cui risiedono le macchine (vedere sudo virsh net-edit default, server almeno una /24)
 vm_net: 192.168.122.0/24
-# gw su vm_net (vedere sudo virsh net-edit default)
+# gw su vm_net (vedere sudo virsh net-edit default, deve essere .1 finale)
 vm_net_gw: 192.168.122.1

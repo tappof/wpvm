@@ -250,9 +250,11 @@
       - wordpress
 
   - name: vhost config
-    copy:
+    template:
       src: etc/apache2/sites-available/wp.conf
       dest: /etc/apache2/sites-available/wp.conf
+      force: yes
+      backup: no
 
   - name: enable vhost
     command: "{{ item }}"
@@ -264,10 +266,11 @@
     systemd:
       name: apache2
       state: reloaded
+      enabled: yes
 
   - name: wordpress db params
     blockinfile:
-      path: /etc/wordpress/config-default.php
+      path: "/etc/wordpress/config-{{ wp_fqdn }}.php"
       create: yes
       marker: <?php //ANSIBLE MANAGED BLOCK ?>
       block: |
@@ -310,6 +313,7 @@
     apt:
       pkg:
       - keepalived
+      - nginx
 
   - name: template keepalived wpb config file
     template:
@@ -317,6 +321,14 @@
       dest: /etc/keepalived/keepalived.conf 
       backup: no
       force: yes
+
+  - name: template nginx reverse proxy load balancer
+    template:
+      src: etc/nginx/sites-available/default
+      dest: /etc/nginx/sites-available/default
+      backup: no
+      force: yes
+    notify: restart-nginx
 
   - name: setup wpb master
     lineinfile:
@@ -340,30 +352,37 @@
       state: started
       enabled: yes
 
-  - name: expire quiescent template
-    sysctl:
-      name: "{{ item }}" 
-      value: 1
-      state: present
-      reload: yes
-    with_items:
-      - net.ipv4.ip_forward
-      - net.ipv4.vs.expire_quiescent_template 
-    tags:
-      - sysctl
+  #- name: expire quiescent template
+  #  sysctl:
+  #    name: "{{ item }}" 
+  #    value: 1
+  #    state: present
+  #    reload: yes
+  #  with_items:
+  #    - net.ipv4.ip_forward
+  #    - net.ipv4.vs.expire_quiescent_template 
+  #  tags:
+  #    - sysctl
+  handlers:
+    - name: restart-nginx 
+      systemd:
+        name: nginx
+        state: restarted
+        enabled: yes
 
-- name: wps disable arp on vip 
-  hosts: wps 
-  vars_files:
-    - vm-config.yml
-  become: true
-  tasks:
-  - name: configure vip on db rs and disable arp reply
-    command: "{{ item }}"
-    # eth1 e' hardcoded perche' so che su vagrant l'interfaccia e' sempre quella
-    with_items:
-    - ip a a {{ wp_vip }}/32 dev eth1 
-    - arptables -A INPUT -d {{ wp_vip }}/32 -j DROP
-    - arptables -A OUTPUT -s {{ wp_vip }}/32  -j mangle --mangle-ip-s {{ wps_ip[ansible_hostname] }}
+
+#- name: wps disable arp on vip 
+#  hosts: wps 
+#  vars_files:
+#    - vm-config.yml
+#  become: true
+#  tasks:
+#  - name: configure vip on db rs and disable arp reply
+#    command: "{{ item }}"
+#    # eth1 e' hardcoded perche' so che su vagrant l'interfaccia e' sempre quella
+#    with_items:
+#    - ip a a {{ wp_vip }}/32 dev eth1 
+#    - arptables -A INPUT -d {{ wp_vip }}/32 -j DROP
+#    - arptables -A OUTPUT -s {{ wp_vip }}/32  -j mangle --mangle-ip-s {{ wps_ip[ansible_hostname] }}
 
 

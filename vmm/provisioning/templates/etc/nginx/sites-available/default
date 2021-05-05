@@ -1,0 +1,14 @@
+upstream {{ wp_fqdn }} {         
+    ip_hash; 
+     {% for wp in wps_ip.values() %} 
+     server {{ wp }};
+     {% endfor %} 
+}
+
+server {         
+    listen 80;        
+    server_name {{ wp_fqdn }};
+    location /  {             
+        proxy_pass http://{{ wp_fqdn }};         
+    }    
+}
