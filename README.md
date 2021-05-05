@@ -8,15 +8,18 @@ La ridondanza e la scalabilità del db (db1..N nello schema) viene garantita tra
 * controllo, esclusione e unione dei nodi/membri automatica;
 * look and feel nativo di MySQL (i client possono contattare uno qualsiasi dei nodi che compongono il cluster senza strati ulteriori);
 * sono richieste almeno 3 istanze per la gestione di quorum e split brain e per la sopravvivenza al fail di 1 nodo.
+
 Il db viene esposto mediante una coppia di bilanciatori active/passive (keepalived/vrrp) chiamati nello schema dbb1/2 e implementati con linux ip virtual server in modalità direct routing:
 * Il bilanciamento viene fatto in kernel space a livello trasporto e sfrutta l'algoritmo wlc (Weighted Least-Connections: nuove connessioni assegnate al server con meno connessioni attive in proporzione al peso assegnatogli);
 * La modalità direct routing è quella più prestante (il vincolo e' che bilanciatori e backend si parlino in L2, il backend viene contattato tramite bilanciatore ma risponde direttamente al chiamante);
 * Fra i 2 nodi è attiva la sincronizzazione delle tabelle di persistenza: in caso di failover viene mantenuta l'associazione fra client e server di backend.
+
 I nodi wp1..N sono i web server che erogano il frontend wordpress. La sincronizzazione del file system (necessaria per temi e upload) avviene mediante volume gluster montato in /var/lib/wordpress/wp-content:
 * il volume gluster è configurato per replicare i dati su ogni nodo così da garantire l'alta affidabilità;
 * per una maggiore scalabilita' (in termini di spazio occupato e banda utilizzata) e' possibile adottare altre tipologie di volume (vedere Dispersed o Distributed Replicated Volume);
 * sono richieste almano 3 istanze per la gestione di quorum e split brain e per la sopravvivenza al fail di 1 nodo;
 * a livello di design avrebbe senso disaccoppiare in server differenti i brick gluster dai webserver.
+
 I client non contattano direttamente i webservice ma una coppia di reverse proxy nginx in bilanciamento ip_hash:
 * il bilanciamento ip_hash e' meno prestante delle altre tipologie nginx ma è l'unico che consente ad un client di atterrare sempre sullo stesso server di fronted;
 * i reverse proxy sono in ha (active/passive con keepalived/vrrp).
