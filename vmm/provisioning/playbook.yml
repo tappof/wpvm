@@ -308,6 +308,8 @@
 - name: configure wp balancer
   hosts: wpbs 
   become: true
+  vars_files:
+    - vm-config.yml
   tasks:
   - name: install keepalived on wpb
     apt:

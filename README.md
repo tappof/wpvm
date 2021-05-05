@@ -21,7 +21,7 @@ I nodi wp1..N sono i web server che erogano il frontend wordpress. La sincronizz
 * a livello di design avrebbe senso disaccoppiare in server differenti i brick gluster dai webserver.
 
 I client non contattano direttamente i webservice ma una coppia di reverse proxy nginx in bilanciamento ip_hash:
-* il bilanciamento ip_hash e' meno prestante delle altre tipologie nginx ma è l'unico che consente ad un client di atterrare sempre sullo stesso server di fronted;
+* il bilanciamento ip_hash e' meno prestante delle altre tipologie nginx consente però ad un client di atterrare sempre sullo stesso server di fronted;
 * i reverse proxy sono in ha (active/passive con keepalived/vrrp).
 
 <pre>
@@ -98,10 +98,12 @@ ambiente: debian buster + vagrant con provider libvirt
 <pre>
 cd vmm
 vagrant up
+cat vmm/provisioning/vm-config.yml  | grep "net_gw\|wp_fqdn" | awk '{print $NF}' | paste - - | awk '{print $2"00 "$1}' | sudo tee -a /etc/hosts
 </pre>
 
 ## Accesso
-* Con un browser puntando a http://192.168.122.100
+* Con il tuo browser di fiducia puntando a http://rockandblog.ga (o alla variabile wp_fqdn che hai inizializzato in vm-config.yml)
 
 # Note:
 * Il playbook ansible per il provisioning non e' completamente idempotente.
+* Le password nel playbook non sono protette da vault.
